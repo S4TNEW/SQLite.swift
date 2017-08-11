@@ -56,17 +56,17 @@ public extension Connection {
         return { arg in fn([arg]) }
     }
 
-    public func createFunction<Z : Value, A : Value>(function: String, deterministic: Bool = false, _ block: @escaping (A?) -> Z) throws -> ((Expression<A?>) -> Expression<Z>) {
+    public func createFunction<Z : Value, A : Value>(_ function: String, deterministic: Bool = false, _ block: @escaping (A?) -> Z) throws -> ((Expression<A?>) -> Expression<Z>) {
         let fn = try createFunction(function, 1, deterministic) { args in block(args[0].map(value)) }
         return { arg in fn([arg]) }
     }
 
-    public func createFunction<Z : Value, A : Value>(function: String, deterministic: Bool = false, _ block: @escaping (A) -> Z?) throws -> ((Expression<A>) -> Expression<Z?>) {
+    public func createFunction<Z : Value, A : Value>(_ function: String, deterministic: Bool = false, _ block: @escaping (A) -> Z?) throws -> ((Expression<A>) -> Expression<Z?>) {
         let fn = try createFunction(function, 1, deterministic) { args in block(value(args[0])) }
         return { arg in fn([arg]) }
     }
 
-    public func createFunction<Z : Value, A : Value>(function: String, deterministic: Bool = false, _ block: @escaping (A?) -> Z?) throws -> ((Expression<A?>) -> Expression<Z?>) {
+    public func createFunction<Z : Value, A : Value>(_ function: String, deterministic: Bool = false, _ block: @escaping (A?) -> Z?) throws -> ((Expression<A?>) -> Expression<Z?>) {
         let fn = try createFunction(function, 1, deterministic) { args in block(args[0].map(value)) }
         return { arg in fn([arg]) }
     }
