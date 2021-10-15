@@ -1,4 +1,30 @@
-0.11.6 (xxx), [diff][diff-0.11.6]
+0.13.1 (tba)
+========================================
+
+* Support for database backup ([#919][])
+* Support for custom SQL aggregates ([#881][])
+* Restore previous iteration behavior ([#1075][])
+* Fix compilation on Linux ([#1077][])
+
+0.13.0 (22-08-2021), [diff][diff-0.13.0]
+========================================
+
+* Swift 5.3 support
+* Xcode 12.5 support
+* Bumps minimum deployment versions
+* Fixes up Package.swift to build SQLiteObjc module
+
+0.12.1, 0.12.2 (21-06-2019) [diff][diff-0.12.2]
+========================================
+
+* CocoaPods modular headers support
+
+0.12.0 (24-04-2019) [diff][diff-0.12.0]
+========================================
+
+* Version with Swift 5 Support
+
+0.11.6 (19-04-2019), [diff][diff-0.11.6]
 ========================================
 
 * Swift 4.2, SQLCipher 4.x ([#866][])
@@ -63,6 +89,9 @@
 [diff-0.11.4]: https://github.com/stephencelis/SQLite.swift/compare/0.11.3...0.11.4
 [diff-0.11.5]: https://github.com/stephencelis/SQLite.swift/compare/0.11.4...0.11.5
 [diff-0.11.6]: https://github.com/stephencelis/SQLite.swift/compare/0.11.5...0.11.6
+[diff-0.12.0]: https://github.com/stephencelis/SQLite.swift/compare/0.11.6...0.12.0
+[diff-0.12.2]: https://github.com/stephencelis/SQLite.swift/compare/0.12.0...0.12.2
+[diff-0.13.0]: https://github.com/stephencelis/SQLite.swift/compare/0.12.2...0.13.0
 
 [#142]: https://github.com/stephencelis/SQLite.swift/issues/142
 [#315]: https://github.com/stephencelis/SQLite.swift/issues/315
@@ -95,3 +124,7 @@
 [#726]: https://github.com/stephencelis/SQLite.swift/pull/726
 [#797]: https://github.com/stephencelis/SQLite.swift/pull/797
 [#866]: https://github.com/stephencelis/SQLite.swift/pull/866
+[#881]: https://github.com/stephencelis/SQLite.swift/pull/881
+[#919]: https://github.com/stephencelis/SQLite.swift/pull/919
+[#1075]: https://github.com/stephencelis/SQLite.swift/pull/1075
+[#1077]: https://github.com/stephencelis/SQLite.swift/issues/1077
