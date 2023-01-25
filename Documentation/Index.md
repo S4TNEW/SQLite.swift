@@ -9,7 +9,9 @@
     - [Connecting to a Database](#connecting-to-a-database)
       - [Read-Write Databases](#read-write-databases)
       - [Read-Only Databases](#read-only-databases)
+      - [In a Shared Group Container](#in-a-shared-group-container)
       - [In-Memory Databases](#in-memory-databases)
+      - [URI parameters](#uri-parameters)
       - [Thread-Safety](#thread-safety)
   - [Building Type-Safe SQL](#building-type-safe-sql)
     - [Expressions](#expressions)
@@ -34,19 +36,26 @@
         - [Filter Operators and Functions](#filter-operators-and-functions)
       - [Sorting Rows](#sorting-rows)
       - [Limiting and Paging Results](#limiting-and-paging-results)
+      - [Recursive and Hierarchical Queries](#recursive-and-hierarchical-queries)
       - [Aggregation](#aggregation)
   - [Upserting Rows](#upserting-rows)
   - [Updating Rows](#updating-rows)
   - [Deleting Rows](#deleting-rows)
   - [Transactions and Savepoints](#transactions-and-savepoints)
+  - [Querying the Schema](#querying-the-schema)
   - [Altering the Schema](#altering-the-schema)
     - [Renaming Tables](#renaming-tables)
+    - [Dropping Tables](#dropping-tables)
     - [Adding Columns](#adding-columns)
       - [Added Column Constraints](#added-column-constraints)
+    - [Schema Changer](#schemachanger)
+      - [Adding Columns](#adding-columns)
+      - [Renaming Columns](#renaming-columns)
+      - [Dropping Columns](#dropping-columns)
+      - [Renaming/Dropping Tables](#renamingdropping-tables)
     - [Indexes](#indexes)
       - [Creating Indexes](#creating-indexes)
       - [Dropping Indexes](#dropping-indexes)
-    - [Dropping Tables](#dropping-tables)
     - [Migrations and Schema Versioning](#migrations-and-schema-versioning)
   - [Custom Types](#custom-types)
     - [Date-Time Values](#date-time-values)
@@ -60,8 +69,8 @@
   - [Custom Collations](#custom-collations)
   - [Full-text Search](#full-text-search)
   - [Executing Arbitrary SQL](#executing-arbitrary-sql)
+  - [Attaching and detaching databases](#attaching-and-detaching-databases)
   - [Logging](#logging)
-
 
 [↩]: #sqliteswift-documentation
 
@@ -81,7 +90,7 @@ process of downloading, compiling, and linking dependencies.
 
   ```swift
   dependencies: [
-    .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.13.3")
+    .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.14.1")
   ]
   ```
 
@@ -102,7 +111,7 @@ install SQLite.swift with Carthage:
  2. Update your Cartfile to include the following:
 
     ```ruby
-    github "stephencelis/SQLite.swift" ~> 0.13.3
+    github "stephencelis/SQLite.swift" ~> 0.14.1
     ```
 
  3. Run `carthage update` and [add the appropriate framework][Carthage Usage].
@@ -132,7 +141,7 @@ install SQLite.swift with Carthage:
     use_frameworks!
 
     target 'YourAppTargetName' do
-        pod 'SQLite.swift', '~> 0.13.3'
+        pod 'SQLite.swift', '~> 0.14.1'
     end
     ```
 
@@ -146,7 +155,7 @@ with the OS you can require the `standalone` subspec:
 
 ```ruby
 target 'YourAppTargetName' do
-  pod 'SQLite.swift/standalone', '~> 0.13.3'
+  pod 'SQLite.swift/standalone', '~> 0.14.1'
 end
 ```
 
@@ -156,7 +165,7 @@ dependency to sqlite3 or one of its subspecs:
 
 ```ruby
 target 'YourAppTargetName' do
-  pod 'SQLite.swift/standalone', '~> 0.13.3'
+  pod 'SQLite.swift/standalone', '~> 0.14.1'
   pod 'sqlite3/fts5', '= 3.15.0'  # SQLite 3.15.0 with FTS5 enabled
 end
 ```
@@ -166,13 +175,13 @@ See the [sqlite3 podspec][sqlite3pod] for more details.
 #### Using SQLite.swift with SQLCipher
 
 If you want to use [SQLCipher][] with SQLite.swift you can require the
-`SQLCipher` subspec in your Podfile:
+`SQLCipher` subspec in your Podfile (SPM is not supported yet, see [#1084](https://github.com/stephencelis/SQLite.swift/issues/1084)):
 
 ```ruby
 target 'YourAppTargetName' do
   # Make sure you only require the subspec, otherwise you app might link against
   # the system SQLite, which means the SQLCipher-specific methods won't work.
-  pod 'SQLite.swift/SQLCipher', '~> 0.13.3'
+  pod 'SQLite.swift/SQLCipher', '~> 0.14.1'
 end
 ```
 
@@ -182,9 +191,16 @@ extend `Connection` with methods to change the database key:
 ```swift
 import SQLite
 
-let db = try Connection("path/to/db.sqlite3")
+let db = try Connection("path/to/encrypted.sqlite3")
 try db.key("secret")
-try db.rekey("another secret")
+try db.rekey("new secret") // changes encryption key on already encrypted db
+```
+
+To encrypt an existing database:
+
+```swift
+let db = try Connection("path/to/unencrypted.sqlite3")
+try db.sqlcipher_export(.uri("encrypted.sqlite3"), key: "secret")
 ```
 
 [CocoaPods]: https://cocoapods.org
@@ -279,11 +295,12 @@ On macOS, you can use your app’s **Application Support** directory:
 
 
 ```swift
+// set the path corresponding to application support
 var path = NSSearchPathForDirectoriesInDomains(
     .applicationSupportDirectory, .userDomainMask, true
 ).first! + "/" + Bundle.main.bundleIdentifier!
 
-// create parent directory iff it doesn’t exist
+// create parent directory inside application support if it doesn’t exist
 try FileManager.default.createDirectory(
 atPath: path, withIntermediateDirectories: true, attributes: nil
 )
@@ -298,7 +315,7 @@ into your Xcode project and added it to your application target), you can
 establish a _read-only_ connection to it.
 
 ```swift
-let path = Bundle.main.pathForResource("db", ofType: "sqlite3")!
+let path = Bundle.main.path(forResource: "db", ofType: "sqlite3")!
 
 let db = try Connection(path, readonly: true)
 ```
@@ -314,6 +331,13 @@ let db = try Connection(path, readonly: true)
 > [2](https://stackoverflow.com/questions/34614968/ios-how-to-copy-pre-seeded-database-at-the-first-running-app-with-sqlite-swift).
 > We welcome changes to the above sample code to show how to successfully copy and use a bundled "seed"
 > database for writing in an app.
+
+#### In a shared group container
+
+It is not recommend to store databases in a [shared group container],
+some users have reported crashes ([#1042](https://github.com/stephencelis/SQLite.swift/issues/1042)).
+
+[shared group container]: https://developer.apple.com/documentation/foundation/filemanager/1412643-containerurl#
 
 #### In-Memory Databases
 
@@ -333,6 +357,16 @@ let db = try Connection(.temporary)
 In-memory databases are automatically deleted when the database connection is
 closed.
 
+#### URI parameters
+
+We can pass `.uri` to the `Connection` initializer to control more aspects of
+the database connection with the help of `URIQueryParameter`s:
+
+```swift
+let db = try Connection(.uri("file.sqlite", parameters: [.cache(.private), .noLock(true)]))
+```
+
+See [Uniform Resource Identifiers](https://www.sqlite.org/uri.html#recognized_query_parameters) for more details.
 
 #### Thread-Safety
 
@@ -371,6 +405,9 @@ to their [SQLite counterparts](https://www.sqlite.org/datatype3.html).
 | `String`        | `TEXT`      |
 | `nil`           | `NULL`      |
 | `SQLite.Blob`†  | `BLOB`      |
+| `URL`           | `TEXT`      |
+| `UUID`          | `TEXT`      |
+| `Date`          | `TEXT`      |
 
 > *While `Int64` is the basic, raw type (to preserve 64-bit integers on
 > 32-bit platforms), `Int` and `Bool` work transparently.
@@ -654,7 +691,7 @@ do {
 }
 ```
 
-Multiple rows can be inserted at once by similarily calling `insertMany` with an array of
+Multiple rows can be inserted at once by similarly calling `insertMany` with an array of
 per-row [setters](#setters).
 
 ```swift
@@ -806,7 +843,7 @@ let query = try db.prepare(users)
 for user in query {
     // 💥 can throw an error here
 }
-````
+```
 
 #### Failable iteration
 
@@ -1086,6 +1123,65 @@ users.limit(5, offset: 5)
 ```
 
 
+#### Recursive and Hierarchical Queries
+
+We can perform a recursive or hierarchical query using a [query's](#queries)
+[`WITH`](https://sqlite.org/lang_with.html) function.
+
+```swift
+// Get the management chain for the manager with id == 8
+
+let chain = Table("chain")
+let id = Expression<Int64>("id")
+let managerId = Expression<Int64>("manager_id")
+
+let query = managers
+    .where(id == 8)
+    .union(chain.join(managers, on: chain[managerId] == managers[id])
+
+chain.with(chain, recursive: true, as: query)
+// WITH RECURSIVE
+//   "chain" AS (
+//     SELECT * FROM "managers" WHERE "id" = 8 
+//     UNION 
+//     SELECT * from "chain" 
+//     JOIN "managers" ON "chain"."manager_id" = "managers"."id"
+//   ) 
+// SELECT * FROM "chain"
+```
+
+Column names and a materialization hint can optionally be provided.
+
+```swift
+// Add a "level" column to the query representing manager's position in the chain
+let level = Expression<Int64>("level")
+
+let queryWithLevel = 
+    managers
+        .select(id, managerId, 0)
+        .where(id == 8)
+        .union(
+            chain
+                .select(managers[id], managers[manager_id], level + 1)
+                .join(managers, on: chain[managerId] == managers[id])
+        )
+
+chain.with(chain, 
+           columns: [id, managerId, level], 
+           recursive: true,
+           hint: .materialize,
+           as: queryWithLevel)
+// WITH RECURSIVE
+//   "chain" ("id", "manager_id", "level") AS MATERIALIZED (
+//     SELECT ("id", "manager_id", 0) FROM "managers" WHERE "id" = 8 
+//     UNION 
+//     SELECT ("manager"."id", "manager"."manager_id", "level" + 1) FROM "chain" 
+//     JOIN "managers" ON "chain"."manager_id" = "managers"."id"
+//   ) 
+// SELECT * FROM "chain"
+```
+
+
 #### Aggregation
 
 [Queries](#queries) come with a number of functions that quickly return
@@ -1290,12 +1386,42 @@ try db.transaction {
 
 > _Note:_ Transactions run in a serial queue.
 
+## Querying the Schema
+
+We can obtain generic information about objects in the current schema with a `SchemaReader`:
+
+```swift
+let schema = db.schema
+```
+
+To query the data:
+
+```swift
+let indexes = try schema.objectDefinitions(type: .index)
+let tables = try schema.objectDefinitions(type: .table)
+let triggers = try schema.objectDefinitions(type: .trigger)
+```
+
+### Indexes and Columns
+
+Specialized methods are available to get more detailed information:
+
+```swift
+let indexes = try schema.indexDefinitions("users")
+let columns = try schema.columnDefinitions("users")
+
+for index in indexes {
+    print("\(index.name) columns:\(index.columns))")
+}
+for column in columns {
+    print("\(column.name) pk:\(column.primaryKey) nullable: \(column.nullable)")
+}
+```
 
 ## Altering the Schema
 
 SQLite.swift comes with several functions (in addition to `Table.create`) for
 altering a database schema in a type-safe manner.
-
 
 ### Renaming Tables
 
@@ -1307,6 +1433,24 @@ try db.run(users.rename(Table("users_old")))
 // ALTER TABLE "users" RENAME TO "users_old"
 ```
 
+### Dropping Tables
+
+We can build
+[`DROP TABLE` statements](https://www.sqlite.org/lang_droptable.html)
+by calling the `dropTable` function on a `SchemaType`.
+
+```swift
+try db.run(users.drop())
+// DROP TABLE "users"
+```
+
+The `drop` function has one additional parameter, `ifExists`, which (when
+`true`) adds an `IF EXISTS` clause to the statement.
+
+```swift
+try db.run(users.drop(ifExists: true))
+// DROP TABLE IF EXISTS "users"
+```
 
 ### Adding Columns
 
@@ -1371,13 +1515,55 @@ tables](#creating-a-table).
     // ALTER TABLE "posts" ADD COLUMN "user_id" INTEGER REFERENCES "users" ("id")
     ```
 
-### Renaming Columns
+### SchemaChanger
 
-Added in SQLite 3.25.0, not exposed yet. [#1073](https://github.com/stephencelis/SQLite.swift/issues/1073)
+Version 0.14.0 introduces `SchemaChanger`, an alternative API to perform more complex
+migrations such as renaming columns. These operations work with all versions of
+SQLite but use SQL statements such as `ALTER TABLE RENAME COLUMN` when available.
 
-### Dropping Columns
+#### Adding Columns
 
-Added in SQLite 3.35.0, not exposed yet. [#1073](https://github.com/stephencelis/SQLite.swift/issues/1073)
+```swift
+let newColumn = ColumnDefinition(
+    name: "new_text_column",
+    type: .TEXT,
+    nullable: true,
+    defaultValue: .stringLiteral("foo")
+)
+
+let schemaChanger = SchemaChanger(connection: db)
+
+try schemaChanger.alter(table: "users") { table in
+    table.add(column: newColumn)
+}
+```
+
+#### Renaming Columns
+
+```swift
+let schemaChanger = SchemaChanger(connection: db)
+try schemaChanger.alter(table: "users") { table in
+    table.rename(column: "old_name", to: "new_name")
+}
+```
+
+#### Dropping Columns
+
+```swift
+let schemaChanger = SchemaChanger(connection: db)
+try schemaChanger.alter(table: "users") { table in
+    table.drop(column: "email")
+}
+```
+
+#### Renaming/Dropping Tables
+
+```swift
+let schemaChanger = SchemaChanger(connection: db)
+
+try schemaChanger.rename(table: "users", to: "users_new")
+try schemaChanger.drop(table: "emails", ifExists: false)
+```
 
 ### Indexes
 
@@ -1433,27 +1619,6 @@ The `dropIndex` function has one additional parameter, `ifExists`, which
 try db.run(users.dropIndex(email, ifExists: true))
 // DROP INDEX IF EXISTS "index_users_on_email"
 ```
-
-
-### Dropping Tables
-
-We can build
-[`DROP TABLE` statements](https://www.sqlite.org/lang_droptable.html)
-by calling the `dropTable` function on a `SchemaType`.
-
-```swift
-try db.run(users.drop())
-// DROP TABLE "users"
-```
-
-The `drop` function has one additional parameter, `ifExists`, which (when
-`true`) adds an `IF EXISTS` clause to the statement.
-
-```swift
-try db.run(users.drop(ifExists: true))
-// DROP TABLE IF EXISTS "users"
-```
-
 
 ### Migrations and Schema Versioning
 
@@ -1791,6 +1956,14 @@ let stmt = try db.prepare("SELECT * FROM attachments WHERE typeConformsTo(UTI, ?
 for row in stmt.bind(kUTTypeImage) { /* ... */ }
 ```
 
+> _Note:_ Prepared queries can be reused, and long lived prepared queries should be `reset()` after each use. Otherwise, the transaction (either [implicit or explicit](https://www.sqlite.org/lang_transaction.html#implicit_versus_explicit_transactions)) will be held open until the query is reset or finalized. This can affect performance. Statements are reset automatically during `deinit`.
+> 
+> ```swift
+> someObj.statement = try db.prepare("SELECT * FROM attachments WHERE typeConformsTo(UTI, ?)")
+> for row in someObj.statement.bind(kUTTypeImage) { /* ... */ }
+> someObj.statement.reset()
+> ```
+
 [UTTypeConformsTo]: https://developer.apple.com/documentation/coreservices/1444079-uttypeconformsto
 
 ## Custom Aggregations
@@ -1902,8 +2075,6 @@ try db.run(emails.create(.FTS5(config)))
 // the last FTS4 query above as:
 let replies = emails.filter(emails.match("subject:\"Re:\"*"))
 // SELECT * FROM "emails" WHERE "emails" MATCH 'subject:"Re:"*'
-
-// https://www.sqlite.org/fts5.html#_changes_to_select_statements_
 ```
 
 ## Executing Arbitrary SQL
@@ -1963,15 +2134,7 @@ using the following functions.
         }
     }
     ```
-    Statements with results may be iterated over, using a `RowIterator` if
-    useful.
     
-    ```swift
-    let emailColumn = Expression<String>("email")
-    let stmt = try db.prepare("SELECT id, email FROM users")
-    let emails = try! stmt.prepareRowIterator().map { $0[emailColumn] }
-    ```
-
   - `run` prepares a single `Statement` object from a SQL string, optionally
     binds values to it (using the statement’s `bind` function), executes,
     and returns the statement.
@@ -2008,6 +2171,32 @@ let target = try Connection(.inMemory)
 
 let backup = try db.backup(usingConnection: target)
 try backup.step()
+```
+
+## Attaching and detaching databases
+
+We can [ATTACH](https://www3.sqlite.org/lang_attach.html) and [DETACH](https://www3.sqlite.org/lang_detach.html)
+databases to an existing connection:
+
+```swift
+let db = try Connection("db.sqlite")
+
+try db.attach(.uri("external.sqlite", parameters: [.mode(.readOnly)]), as: "external")
+// ATTACH DATABASE 'file:external.sqlite?mode=ro' AS 'external'
+
+let table = Table("table", database: "external")
+let count = try db.scalar(table.count)
+// SELECT count(*) FROM 'external.table'
+
+try db.detach("external")
+// DETACH DATABASE 'external'
+```
+
+When compiled for SQLCipher, we can additionally pass a `key` parameter to `attach`:
+
+```swift
+try db.attach(.uri("encrypted.sqlite"), as: "encrypted", key: "secret")
+// ATTACH DATABASE 'encrypted.sqlite' AS 'encrypted' KEY 'secret'
 ```
 
 ## Logging

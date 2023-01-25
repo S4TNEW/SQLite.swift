@@ -52,6 +52,7 @@ for user in try Array(rowIterator) {
 
 /// also with `map()`
 let mapRowIterator = try db.prepareRowIterator(users)
+
 let userIds = try mapRowIterator.map { $0[id] }
 
 /// using `failableNext()` on `RowIterator`
@@ -64,7 +65,7 @@ do {
     // Handle error
 }
 
-/// define a virtual tabe for the FTS index
+/// define a virtual table for the FTS index
 let emails = VirtualTable("emails")
 
 let subject = Expression<String>("subject")
@@ -99,5 +100,33 @@ db.createAggregation("customConcat",
                      initialValue: "users:",
                      reduce: reduce,
                      result: { $0 })
-let result = db.prepare("SELECT customConcat(email) FROM users").scalar() as! String
+let result = try db.prepare("SELECT customConcat(email) FROM users").scalar() as! String
 print(result)
+
+/// schema queries
+let schema = db.schema
+let objects = try schema.objectDefinitions()
+print(objects)
+
+let columns = try schema.columnDefinitions(table: "users")
+print(columns)
+
+/// schema alteration
+
+let schemaChanger = SchemaChanger(connection: db)
+try schemaChanger.alter(table: "users") { table in
+    table.add(column: ColumnDefinition(name: "age", type: .INTEGER))
+    table.rename(column: "email", to: "electronic_mail")
+    table.drop(column: "name")
+}
+
+let changedColumns = try schema.columnDefinitions(table: "users")
+print(changedColumns)
+
+let age = Expression<Int?>("age")
+let electronicMail = Expression<String>("electronic_mail")
+
+let newRowid = try db.run(users.insert(
+    electronicMail <- "carol@mac.com",
+    age <- 33
+))

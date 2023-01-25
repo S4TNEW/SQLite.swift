@@ -193,12 +193,14 @@ extension QueryType {
     ///
     /// - Parameters:
     ///
+    ///   - all: If false, duplicate rows are removed from the result.
+    ///
     ///   - table: A query representing the other table.
     ///
     /// - Returns: A query with the given `UNION` clause applied.
-    public func union(_ table: QueryType) -> Self {
+    public func union(all: Bool = false, _ table: QueryType) -> Self {
         var query = self
-        query.clauses.union.append(table)
+        query.clauses.union.append((all, table))
         return query
     }
 
@@ -596,9 +598,9 @@ extension QueryType {
             return nil
         }
 
-        return " ".join(clauses.union.map { query in
+        return " ".join(clauses.union.map { (all, query) in
             " ".join([
-                Expression<Void>(literal: "UNION"),
+                Expression<Void>(literal: all ? "UNION ALL" : "UNION"),
                 query
             ])
         })
@@ -856,6 +858,7 @@ extension QueryType {
 
     public var expression: Expression<Void> {
         let clauses: [Expressible?] = [
+            withClause,
             selectClause,
             joinClause,
             whereClause,
@@ -988,6 +991,15 @@ public struct RowIterator: FailableIterator {
         }
         return elements
     }
+
+    public func compactMap<T>(_ transform: (Element) throws -> T?) throws -> [T] {
+        var elements = [T]()
+        while let row = try failableNext() {
+            guard let element = try transform(row) else { continue }
+            elements.append(element)
+        }
+        return elements
+    }
 }
 
 extension Connection {
@@ -1009,6 +1021,14 @@ extension Connection {
         return RowIterator(statement: statement, columnNames: try columnNamesForQuery(query))
     }
 
+    public func prepareRowIterator(_ statement: String, bindings: Binding?...) throws -> RowIterator {
+        try prepare(statement, bindings).prepareRowIterator()
+    }
+
+    public func prepareRowIterator(_ statement: String, bindings: [Binding?]) throws -> RowIterator {
+        try prepare(statement, bindings).prepareRowIterator()
+    }
+
     private func columnNamesForQuery(_ query: QueryType) throws -> [String: Int] {
         var (columnNames, idx) = ([String: Int](), 0)
         column: for each in query.clauses.select.columns {
@@ -1016,10 +1036,29 @@ extension Connection {
             let column = names.removeLast()
             let namespace = names.joined(separator: ".")
 
+            // Return a copy of the input "with" clause stripping all subclauses besides "select", "join", and "with".
+            func strip(_ with: WithClauses) -> WithClauses {
+                var stripped = WithClauses()
+                stripped.recursive = with.recursive
+                for subclause in with.clauses {
+                    let query = subclause.query
+                    var strippedQuery = type(of: query).init(query.clauses.from.name, database: query.clauses.from.database)
+                    strippedQuery.clauses.select = query.clauses.select
+                    strippedQuery.clauses.join = query.clauses.join
+                    strippedQuery.clauses.with = strip(query.clauses.with)
+
+                    var strippedSubclause = WithClauses.Clause(alias: subclause.alias, query: strippedQuery)
+                    strippedSubclause.columns = subclause.columns
+                    stripped.clauses.append(strippedSubclause)
+                }
+                return stripped
+            }
+
             func expandGlob(_ namespace: Bool) -> (QueryType) throws -> Void {
                 { (queryType: QueryType) throws -> Void in
                     var query = type(of: queryType).init(queryType.clauses.from.name, database: queryType.clauses.from.database)
                     query.clauses.select = queryType.clauses.select
+                    query.clauses.with = strip(queryType.clauses.with)
                     let expression = query.expression
                     var names = try self.prepare(expression.template, expression.bindings).columnNames.map { $0.quote() }
                     if namespace { names = names.map { "\(queryType.tableName().expression.template).\($0)" } }
@@ -1032,11 +1071,9 @@ extension Connection {
                 select.clauses.select = (false, [Expression<Void>(literal: "*") as Expressible])
                 let queries = [select] + query.clauses.join.map { $0.query }
                 if !namespace.isEmpty {
-                    for q in queries {
-                        if q.tableName().expression.template == namespace {
-                            try expandGlob(true)(q)
-                            continue column
-                        }
+                    for q in queries where q.tableName().expression.template == namespace {
+                        try expandGlob(true)(q)
+                        continue column
                     }
                     throw QueryError.noSuchTable(name: namespace)
                 }
@@ -1251,7 +1288,9 @@ public struct QueryClauses {
 
     var limit: (length: Int, offset: Int?)?
 
-    var union = [QueryType]()
+    var union = [(all: Bool, table: QueryType)]()
+
+    var with = WithClauses()
 
     fileprivate init(_ name: String, alias: String?, database: String?) {
         from = (name, alias, database)

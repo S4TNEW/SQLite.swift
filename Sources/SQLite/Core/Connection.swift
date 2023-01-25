@@ -55,7 +55,8 @@ public final class Connection {
         /// See: <https://www.sqlite.org/uri.html>
         ///
         /// - Parameter filename: A URI filename
-        case uri(String)
+        /// - Parameter parameters: optional query parameters
+        case uri(String, parameters: [URIQueryParameter] = [])
     }
 
     /// An SQL operation passed to update callbacks.
@@ -103,8 +104,11 @@ public final class Connection {
     ///
     /// - Returns: A new database connection.
     public init(_ location: Location = .inMemory, readonly: Bool = false) throws {
-        let flags = readonly ? SQLITE_OPEN_READONLY : SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE
-        try check(sqlite3_open_v2(location.description, &_handle, flags | SQLITE_OPEN_FULLMUTEX, nil))
+        let flags = readonly ? SQLITE_OPEN_READONLY : (SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE)
+        try check(sqlite3_open_v2(location.description,
+                                  &_handle,
+                                  flags | SQLITE_OPEN_FULLMUTEX | SQLITE_OPEN_URI,
+                                  nil))
         queue.setSpecific(key: Connection.queueKey, value: queueContext)
     }
 
@@ -152,14 +156,10 @@ public final class Connection {
         Int(sqlite3_total_changes(handle))
     }
 
-    /// The user version of the database.
-    /// See SQLite [PRAGMA user_version](https://sqlite.org/pragma.html#pragma_user_version)
-    public var userVersion: Int32? {
-        get {
-            (try? scalar("PRAGMA user_version") as? Int64).map(Int32.init)
-        }
-        set {
-            _ = try? run("PRAGMA user_version = \(newValue ?? 0)")
+    /// Whether or not the database will return extended error codes when errors are handled.
+    public var usesExtendedErrorCodes: Bool = false {
+        didSet {
+            sqlite3_extended_result_codes(handle, usesExtendedErrorCodes ? 1 : 0)
         }
     }
 
@@ -727,8 +727,17 @@ extension Connection.Location: CustomStringConvertible {
             return ":memory:"
         case .temporary:
             return ""
-        case .uri(let URI):
-            return URI
+        case let .uri(URI, parameters):
+            guard parameters.count > 0,
+                  var components = URLComponents(string: URI) else {
+                return URI
+            }
+            components.queryItems =
+                (components.queryItems ?? []) + parameters.map(\.queryItem)
+            if components.scheme == nil {
+                components.scheme = "file"
+            }
+            return components.description
         }
     }
 
