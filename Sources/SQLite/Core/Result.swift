@@ -2,8 +2,8 @@
 import sqlite3
 #elseif SQLITE_SWIFT_SQLCIPHER
 import SQLCipher
-#elseif os(Linux)
-import CSQLite
+#elseif canImport(SwiftToolchainCSQLite)
+import SwiftToolchainCSQLite
 #else
 import SQLite3
 #endif

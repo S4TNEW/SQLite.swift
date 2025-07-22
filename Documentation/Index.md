@@ -63,6 +63,7 @@
       - [Renaming Columns](#renaming-columns)
       - [Dropping Columns](#dropping-columns)
       - [Renaming/Dropping Tables](#renamingdropping-tables)
+      - [Creating Tables](#creating-tables)      
     - [Indexes](#indexes)
       - [Creating Indexes](#creating-indexes)
       - [Dropping Indexes](#dropping-indexes)
@@ -108,7 +109,7 @@ process of downloading, compiling, and linking dependencies.
 
   ```swift
   dependencies: [
-    .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.15.3")
+    .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.15.4")
   ]
   ```
 
@@ -129,7 +130,7 @@ install SQLite.swift with Carthage:
  2. Update your Cartfile to include the following:
 
     ```ruby
-    github "stephencelis/SQLite.swift" ~> 0.15.3
+    github "stephencelis/SQLite.swift" ~> 0.15.4
     ```
 
  3. Run `carthage update` and [add the appropriate framework][Carthage Usage].
@@ -159,7 +160,7 @@ install SQLite.swift with Carthage:
     use_frameworks!
 
     target 'YourAppTargetName' do
-        pod 'SQLite.swift', '~> 0.15.3'
+        pod 'SQLite.swift', '~> 0.15.4'
     end
     ```
 
@@ -173,7 +174,7 @@ with the OS you can require the `standalone` subspec:
 
 ```ruby
 target 'YourAppTargetName' do
-  pod 'SQLite.swift/standalone', '~> 0.15.3'
+  pod 'SQLite.swift/standalone', '~> 0.15.4'
 end
 ```
 
@@ -183,7 +184,7 @@ dependency to sqlite3 or one of its subspecs:
 
 ```ruby
 target 'YourAppTargetName' do
-  pod 'SQLite.swift/standalone', '~> 0.15.3'
+  pod 'SQLite.swift/standalone', '~> 0.15.4'
   pod 'sqlite3/fts5', '= 3.15.0'  # SQLite 3.15.0 with FTS5 enabled
 end
 ```
@@ -199,7 +200,7 @@ If you want to use [SQLCipher][] with SQLite.swift you can require the
 target 'YourAppTargetName' do
   # Make sure you only require the subspec, otherwise you app might link against
   # the system SQLite, which means the SQLCipher-specific methods won't work.
-  pod 'SQLite.swift/SQLCipher', '~> 0.15.3'
+  pod 'SQLite.swift/SQLCipher', '~> 0.15.4'
 end
 ```
 
@@ -1582,6 +1583,17 @@ let schemaChanger = SchemaChanger(connection: db)
 try schemaChanger.rename(table: "users", to: "users_new")
 try schemaChanger.drop(table: "emails", ifExists: false)
 ```
+
+#### Creating Tables
+
+```swift
+let schemaChanger = SchemaChanger(connection: db)
+
+try schemaChanger.create(table: "users") { table in 
+    table.add(column: .init(name: "id", primaryKey: .init(autoIncrement: true), type: .INTEGER))
+    table.add(column: .init(name: "name", type: .TEXT, nullable: false))            
+}
+``` 
 
 ### Indexes
 
